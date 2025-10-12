@@ -1,1 +1,15 @@
-# docker compose placeholder
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: swc
+      POSTGRES_PASSWORD: swc
+      POSTGRES_DB: swc
+    ports:
+      - "5432:5432"
+    volumes:
+      - swc_pg:/var/lib/postgresql/data
+volumes:
+  swc_pg:
+
