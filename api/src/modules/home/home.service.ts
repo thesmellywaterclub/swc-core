@@ -49,7 +49,7 @@ function buildProductGallery(products: HomePageData["featuredProducts"]): HomePr
 
 export async function getHomePageData(limit = 4): Promise<HomePageData> {
   const staticContent = cloneStaticContent();
-  const featuredProducts = getFeaturedProducts(limit);
+  const featuredProducts = await getFeaturedProducts(limit);
   const productGallery = buildProductGallery(featuredProducts);
 
   return {

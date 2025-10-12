@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "db:reset": "prisma migrate reset -f",
+    "seed": "prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
@@ -26,6 +31,10 @@
     "supertest": "^7.1.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "tsx": "^4.19.1"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

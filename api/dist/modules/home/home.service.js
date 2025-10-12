@@ -42,7 +42,7 @@ function buildProductGallery(products) {
 }
 async function getHomePageData(limit = 4) {
     const staticContent = cloneStaticContent();
-    const featuredProducts = (0, products_service_1.getFeaturedProducts)(limit);
+    const featuredProducts = await (0, products_service_1.getFeaturedProducts)(limit);
     const productGallery = buildProductGallery(featuredProducts);
     return {
         ...staticContent,
