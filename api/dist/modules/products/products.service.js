@@ -1,10 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.listProducts = listProducts;
 exports.getProducts = getProducts;
 exports.getProductBySlug = getProductBySlug;
 exports.getDefaultVariant = getDefaultVariant;
 exports.getFeaturedProducts = getFeaturedProducts;
+exports.getProductById = getProductById;
+exports.createProduct = createProduct;
+exports.updateProduct = updateProduct;
+exports.archiveProduct = archiveProduct;
+const client_1 = require("@prisma/client");
 const prisma_1 = require("../../prisma");
+const error_1 = require("../../middlewares/error");
 const productInclude = {
     brand: true,
     media: {
@@ -43,6 +50,20 @@ function coerceNotes(notes) {
         heart: coerceStringArray(notes.heart),
         base: coerceStringArray(notes.base),
     };
+}
+function hasAnyNote(notes) {
+    return Boolean(notes.top.length || notes.heart.length || notes.base.length);
+}
+function serializeNotesInput(notes) {
+    if (!notes) {
+        return client_1.Prisma.JsonNull;
+    }
+    const normalized = {
+        top: [...notes.top],
+        heart: [...notes.heart],
+        base: [...notes.base],
+    };
+    return hasAnyNote(normalized) ? normalized : client_1.Prisma.JsonNull;
 }
 function mapVariant(variant) {
     return {
@@ -110,17 +131,50 @@ async function fetchProduct(where) {
     });
     return product ? mapProduct(product) : undefined;
 }
-async function getProducts() {
+async function listProducts(options = {}) {
+    const limit = options.limit ?? 20;
+    const take = Math.min(Math.max(limit, 1), 50);
+    const search = options.search?.trim();
+    const where = {
+        ...(options.isActive === undefined
+            ? { isActive: true }
+            : { isActive: options.isActive }),
+        ...(options.gender ? { gender: options.gender } : {}),
+        ...(options.brandId ? { brandId: options.brandId } : {}),
+    };
+    if (search) {
+        where.OR = [
+            { title: { contains: search, mode: "insensitive" } },
+            { slug: { contains: search, mode: "insensitive" } },
+            { brand: { name: { contains: search, mode: "insensitive" } } },
+        ];
+    }
     const rows = await prisma_1.prisma.product.findMany({
         include: productInclude,
-        where: {
-            isActive: true,
-        },
-        orderBy: {
-            createdAt: "desc",
-        },
+        where,
+        orderBy: [
+            { createdAt: "desc" },
+            { title: "asc" },
+        ],
+        take: take + 1,
+        ...(options.cursor
+            ? {
+                skip: 1,
+                cursor: { id: options.cursor },
+            }
+            : {}),
     });
-    return rows.map(mapProduct);
+    const hasMore = rows.length > take;
+    const slice = hasMore ? rows.slice(0, take) : rows;
+    const nextCursor = hasMore ? slice[slice.length - 1]?.id : undefined;
+    return {
+        data: slice.map(mapProduct),
+        nextCursor,
+    };
+}
+async function getProducts() {
+    const result = await listProducts({ limit: 50 });
+    return result.data;
 }
 async function getProductBySlug(slug) {
     return fetchProduct({ slug });
@@ -158,4 +212,84 @@ async function getFeaturedProducts(limit = 4) {
         take,
     });
     return rows.map(mapProduct);
+}
+async function getProductById(id) {
+    const product = await fetchProduct({ id });
+    if (!product) {
+        throw (0, error_1.createHttpError)(404, "Product not found");
+    }
+    return product;
+}
+async function createProduct(input) {
+    try {
+        const product = await prisma_1.prisma.product.create({
+            data: {
+                slug: input.slug,
+                title: input.title,
+                brandId: input.brandId,
+                gender: input.gender,
+                description: input.description ?? null,
+                isActive: input.isActive ?? true,
+                notes: serializeNotesInput(input.notes ?? emptyNotes),
+            },
+            include: productInclude,
+        });
+        return mapProduct(product);
+    }
+    catch (error) {
+        if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002") {
+            throw (0, error_1.createHttpError)(409, "A product with one of the unique fields already exists", { target: error.meta?.target });
+        }
+        throw error;
+    }
+}
+async function updateProduct(id, input) {
+    await getProductById(id);
+    const data = {};
+    if (input.slug !== undefined) {
+        data.slug = input.slug;
+    }
+    if (input.title !== undefined) {
+        data.title = input.title;
+    }
+    if (input.brandId !== undefined) {
+        data.brand = { connect: { id: input.brandId } };
+    }
+    if (input.gender !== undefined) {
+        data.gender = input.gender;
+    }
+    if (input.description !== undefined) {
+        data.description = input.description ?? null;
+    }
+    if (input.isActive !== undefined) {
+        data.isActive = input.isActive;
+    }
+    if (input.notes !== undefined) {
+        data.notes = input.notes ? serializeNotesInput(input.notes) : client_1.Prisma.JsonNull;
+    }
+    try {
+        const product = await prisma_1.prisma.product.update({
+            where: { id },
+            data,
+            include: productInclude,
+        });
+        return mapProduct(product);
+    }
+    catch (error) {
+        if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002") {
+            throw (0, error_1.createHttpError)(409, "A product with one of the unique fields already exists", { target: error.meta?.target });
+        }
+        throw error;
+    }
+}
+async function archiveProduct(id) {
+    await getProductById(id);
+    await prisma_1.prisma.product.update({
+        where: { id },
+        data: {
+            isActive: false,
+        },
+    });
 }

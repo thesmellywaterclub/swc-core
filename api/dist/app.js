@@ -9,6 +9,8 @@ const helmet_1 = __importDefault(require("helmet"));
 const cors_1 = require("./middlewares/cors");
 const error_1 = require("./middlewares/error");
 const home_1 = require("./modules/home");
+const products_1 = require("./modules/products");
+const users_1 = require("./modules/users");
 const app = (0, express_1.default)();
 exports.app = app;
 app.use((0, helmet_1.default)());
@@ -25,9 +27,13 @@ app.get("/", (_req, res) => {
         endpoints: {
             health: "/health",
             home: "/api/home",
+            products: "/api/products",
+            users: "/api/users",
         },
     });
 });
 app.use("/api/home", home_1.homeRoutes);
+app.use("/api/products", products_1.productsRoutes);
+app.use("/api/users", users_1.usersRoutes);
 app.use(error_1.notFoundHandler);
 app.use(error_1.errorHandler);
