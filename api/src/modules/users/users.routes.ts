@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { authenticate } from "../../middlewares/auth";
 import {
   createUserHandler,
   deleteUserHandler,
@@ -9,6 +10,8 @@ import {
 } from "./users.controller";
 
 const router = Router();
+
+router.use(authenticate());
 
 router.get("/", listUsersHandler);
 router.post("/", createUserHandler);

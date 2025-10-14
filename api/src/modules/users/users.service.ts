@@ -54,7 +54,7 @@ export type UpdateUserInput = Partial<Omit<CreateUserInput, "password">> & {
   password?: string;
 };
 
-function serializeUser(user: UserRecord): UserSummary {
+export function serializeUser(user: UserRecord): UserSummary {
   return {
     id: user.id,
     email: user.email,

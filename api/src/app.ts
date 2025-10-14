@@ -5,7 +5,7 @@ import { corsMiddleware } from "./middlewares/cors";
 import { errorHandler, notFoundHandler } from "./middlewares/error";
 import { homeRoutes } from "./modules/home";
 import { productsRoutes } from "./modules/products";
-import { usersRoutes } from "./modules/users";
+import { authRoutes, usersRoutes } from "./modules/users";
 
 const app = express();
 
@@ -25,6 +25,7 @@ app.get("/", (_req, res) => {
     endpoints: {
       health: "/health",
       home: "/api/home",
+      auth: "/api/auth",
       products: "/api/products",
       users: "/api/users",
     },
@@ -32,6 +33,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/home", homeRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/users", usersRoutes);
 
