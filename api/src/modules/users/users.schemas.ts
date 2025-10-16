@@ -47,7 +47,7 @@ export const createUserSchema = z.object({
 export const updateUserSchema = createUserSchema
   .omit({ password: true, email: true })
   .extend({
-    email: z.string().email().optional(),
+    email: z.email().optional(),
     password: z.string().min(8).optional(),
     phone: createUserSchema.shape.phone.optional(),
   })

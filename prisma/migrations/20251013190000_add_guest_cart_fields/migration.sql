@@ -1,0 +1,9 @@
+-- AlterTable
+ALTER TABLE "Cart" ALTER COLUMN "userId" DROP NOT NULL;
+ALTER TABLE "Cart" ADD COLUMN     "guestToken" TEXT;
+ALTER TABLE "Cart" ADD COLUMN     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Cart" ADD COLUMN     "expiresAt" TIMESTAMP(3);
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "Cart_guestToken_key" ON "Cart"("guestToken");
+

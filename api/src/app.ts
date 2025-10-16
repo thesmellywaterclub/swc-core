@@ -3,6 +3,7 @@ import helmet from "helmet";
 
 import { corsMiddleware } from "./middlewares/cors";
 import { errorHandler, notFoundHandler } from "./middlewares/error";
+import { cartRoutes } from "./modules/cart";
 import { homeRoutes } from "./modules/home";
 import { productsRoutes } from "./modules/products";
 import { authRoutes, usersRoutes } from "./modules/users";
@@ -26,6 +27,7 @@ app.get("/", (_req, res) => {
       health: "/health",
       home: "/api/home",
       auth: "/api/auth",
+      cart: "/api/cart",
       products: "/api/products",
       users: "/api/users",
     },
@@ -34,6 +36,7 @@ app.get("/", (_req, res) => {
 
 app.use("/api/home", homeRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/cart", cartRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/users", usersRoutes);
 
