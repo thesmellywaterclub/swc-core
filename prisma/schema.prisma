@@ -211,8 +211,8 @@ model CartItem {
 /* =========================== Orders (JSON address snapshots) =========================== */
 model Order {
   id             String          @id @default(uuid())
-  user           User            @relation(fields: [userId], references: [id])
-  userId         String
+  user           User?           @relation(fields: [userId], references: [id])
+  userId         String?
   status         OrderStatus     @default(pending)
   subtotalPaise  Int
   taxPaise       Int             @default(0)
@@ -221,6 +221,8 @@ model Order {
   totalPaise     Int
   billingAddress Json
   shippingAddress Json
+  notes          String?
+  guestEmail     String?
   payment        Payment?        @relation("OrderPayment", fields: [paymentId], references: [id])
   paymentId      String?         @unique
   createdAt      DateTime        @default(now())
