@@ -69,6 +69,17 @@ model User {
   @@index([createdAt])
 }
 
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  email      String   @db.Citext
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([email, createdAt])
+}
+
 model UserAddress {
   id         String   @id @default(uuid())
   user       User     @relation(fields: [userId], references: [id])

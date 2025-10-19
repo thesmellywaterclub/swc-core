@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { createHash, randomInt } from "crypto";
 import jwt, { type SignOptions, type Secret } from "jsonwebtoken";
 
 import { env } from "../../env";
@@ -70,8 +71,91 @@ function stripPassword(user: UserWithPassword): {
   };
 }
 
-export async function registerUser(input: CreateUserInput): Promise<AuthResponse> {
+const OTP_EXPIRY_MINUTES = 10;
+
+function hashOtp(code: string): string {
+  return createHash("sha256").update(code).digest("hex");
+}
+
+function generateOtpCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+export async function requestEmailOtp(email: string) {
+  const existingUser = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
+    select: { id: true },
+  });
+
+  if (existingUser) {
+    throw createHttpError(409, "An account with this email already exists");
+  }
+
+  await prisma.emailVerificationToken.deleteMany({
+    where: {
+      email,
+      consumedAt: null,
+      expiresAt: { lt: new Date() },
+    },
+  });
+
+  const code = generateOtpCode();
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await prisma.emailVerificationToken.create({
+    data: {
+      email,
+      codeHash: hashOtp(code),
+      expiresAt,
+    },
+  });
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info(`[auth] Email OTP for ${email}: ${code}`);
+  }
+
+  return {
+    expiresInSeconds: OTP_EXPIRY_MINUTES * 60,
+  } as const;
+}
+
+async function verifyEmailOtp(email: string, code: string, tx: Prisma.TransactionClient) {
+  const token = await tx.emailVerificationToken.findFirst({
+    where: {
+      email,
+      consumedAt: null,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  if (!token) {
+    throw createHttpError(400, "No OTP found for the provided email");
+  }
+
+  if (token.expiresAt < new Date()) {
+    throw createHttpError(400, "OTP has expired. Please request a new one");
+  }
+
+  const expectedHash = hashOtp(code);
+  const matches = token.codeHash === expectedHash;
+
+  if (!matches) {
+    throw createHttpError(400, "Invalid OTP code");
+  }
+
+  await tx.emailVerificationToken.update({
+    where: { id: token.id },
+    data: {
+      consumedAt: new Date(),
+    },
+  });
+}
+
+export async function registerUser(input: CreateUserInput, otpCode: string): Promise<AuthResponse> {
   const user = await prisma.$transaction(async (tx) => {
+    await verifyEmailOtp(input.email, otpCode, tx);
     try {
       const passwordHash = await bcrypt.hash(input.password, 12);
       const created = await tx.user.create({

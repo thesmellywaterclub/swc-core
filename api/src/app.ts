@@ -6,6 +6,7 @@ import { errorHandler, notFoundHandler } from "./middlewares/error";
 import { cartRoutes } from "./modules/cart";
 import { checkoutRoutes } from "./modules/checkout";
 import { homeRoutes } from "./modules/home";
+import { ordersRoutes } from "./modules/orders";
 import { productsRoutes } from "./modules/products";
 import { authRoutes, usersRoutes } from "./modules/users";
 
@@ -32,6 +33,7 @@ app.get("/", (_req, res) => {
       products: "/api/products",
       users: "/api/users",
       checkout: "/api/checkout",
+      orders: "/api/orders",
     },
   });
 });
@@ -40,6 +42,7 @@ app.use("/api/home", homeRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/checkout", checkoutRoutes);
+app.use("/api/orders", ordersRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/users", usersRoutes);
 

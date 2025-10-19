@@ -1,12 +1,28 @@
 import type { Request } from "express";
 
 import { asyncHandler } from "../../utils/asyncHandler";
-import { loginUser, registerUser, getAuthenticatedUser } from "./auth.service";
-import { loginSchema, registerSchema } from "./auth.schemas";
+import {
+  loginUser,
+  registerUser,
+  getAuthenticatedUser,
+  requestEmailOtp,
+} from "./auth.service";
+import {
+  loginSchema,
+  registerSchema,
+  requestEmailOtpSchema,
+} from "./auth.schemas";
 
 export const registerHandler = asyncHandler(async (req: Request, res) => {
   const payload = registerSchema.parse(req.body);
-  const result = await registerUser(payload);
+  const { otpCode, ...userInput } = payload;
+  const result = await registerUser(userInput, otpCode);
+  res.status(201).json({ data: result });
+});
+
+export const requestEmailOtpHandler = asyncHandler(async (req: Request, res) => {
+  const { email } = requestEmailOtpSchema.parse(req.body);
+  const result = await requestEmailOtp(email);
   res.status(201).json({ data: result });
 });
 
