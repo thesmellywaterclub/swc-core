@@ -6,7 +6,9 @@ import { errorHandler, notFoundHandler } from "./middlewares/error";
 import { cartRoutes } from "./modules/cart";
 import { checkoutRoutes } from "./modules/checkout";
 import { homeRoutes } from "./modules/home";
+import { emailRoutes } from "./modules/email";
 import { ordersRoutes } from "./modules/orders";
+import { paymentsRoutes } from "./modules/payments";
 import { productsRoutes } from "./modules/products";
 import { authRoutes, usersRoutes } from "./modules/users";
 
@@ -30,10 +32,12 @@ app.get("/", (_req, res) => {
       home: "/api/home",
       auth: "/api/auth",
       cart: "/api/cart",
+      email: "/api/email",
       products: "/api/products",
       users: "/api/users",
       checkout: "/api/checkout",
       orders: "/api/orders",
+      payments: "/api/payments",
     },
   });
 });
@@ -41,8 +45,10 @@ app.get("/", (_req, res) => {
 app.use("/api/home", homeRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/cart", cartRoutes);
+app.use("/api/email", emailRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/orders", ordersRoutes);
+app.use("/api/payments", paymentsRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/users", usersRoutes);
 

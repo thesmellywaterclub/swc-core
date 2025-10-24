@@ -1,4 +1,7 @@
+import { config as loadEnv } from "dotenv";
 import { z } from "zod";
+
+loadEnv();
 
 const DEFAULT_JWT_SECRET = "development-jwt-secret-please-change-0123456789abcd";
 
@@ -7,11 +10,16 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   CORS_ORIGINS: z.string().optional(),
   DATABASE_URL: z.string().optional(),
+  RAZORPAY_KEY_ID: z.string().min(1, "RAZORPAY_KEY_ID is required"),
+  RAZORPAY_KEY_SECRET: z.string().min(1, "RAZORPAY_KEY_SECRET is required"),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be at least 32 characters long")
     .default(DEFAULT_JWT_SECRET),
   JWT_EXPIRES_IN: z.string().default("15m"),
+  RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
+  EMAIL_FROM: z.string().min(1, "EMAIL_FROM is required"),
 });
 
 const parsed = envSchema.parse({
@@ -19,8 +27,13 @@ const parsed = envSchema.parse({
   PORT: process.env.PORT,
   CORS_ORIGINS: process.env.CORS_ORIGINS,
   DATABASE_URL: process.env.DATABASE_URL,
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  EMAIL_FROM: process.env.EMAIL_FROM,
 });
 
 const corsOrigins =
@@ -31,8 +44,13 @@ export const env = {
   port: parsed.PORT,
   corsOrigins,
   databaseUrl: parsed.DATABASE_URL,
+  razorpayKeyId: parsed.RAZORPAY_KEY_ID,
+  razorpayKeySecret: parsed.RAZORPAY_KEY_SECRET,
+  razorpayWebhookSecret: parsed.RAZORPAY_WEBHOOK_SECRET ?? null,
   jwtSecret: parsed.JWT_SECRET,
   jwtExpiresIn: parsed.JWT_EXPIRES_IN,
+  resendApiKey: parsed.RESEND_API_KEY,
+  emailFrom: parsed.EMAIL_FROM,
 };
 
 export type AppEnv = typeof env;
