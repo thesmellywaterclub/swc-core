@@ -59,10 +59,24 @@ export type HomeProductGalleryItem = {
   ratingCount: number;
 };
 
+export type HomeGenderSectionMeta = {
+  id: "men" | "women" | "unisex";
+  title: string;
+  description: string;
+  ctaHref?: string;
+  ctaLabel?: string;
+  limit?: number;
+};
+
+export type HomeGenderSection = HomeGenderSectionMeta & {
+  products: HomeProductGalleryItem[];
+};
+
 export type HomePageData = {
-  hero: HomeHero;
+  hero: HomeHero | null;
   featuredProducts: Product[];
   productGallery: HomeProductGalleryItem[];
+  genderSections: HomeGenderSection[];
   highlights: HomeHighlight[];
   rituals: HomeRitual[];
   journal: HomeJournalEntry[];
@@ -73,4 +87,9 @@ export type HomePageData = {
   };
 };
 
-export type HomeStaticContent = Omit<HomePageData, "featuredProducts" | "productGallery">;
+export type HomeStaticContent = Omit<
+  HomePageData,
+  "featuredProducts" | "productGallery" | "genderSections"
+> & {
+  genderSections: HomeGenderSectionMeta[];
+};

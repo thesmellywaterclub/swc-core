@@ -20,6 +20,32 @@ export const homeStaticContent: HomeStaticContent = {
     image:
       "https://images.unsplash.com/photo-1573537805874-4cedc5d389ce?auto=format&fit=crop&w=1400&q=80",
   },
+  genderSections: [
+    {
+      id: "men",
+      title: "For Him",
+      description: "Cedar, spice, and mineral notes curated for evening silhouettes.",
+      ctaHref: "/products?gender=men",
+      ctaLabel: "Shop men's perfumes",
+      limit: 4,
+    },
+    {
+      id: "women",
+      title: "For Her",
+      description: "Bouquets of ambered florals and gourmand ribbons for after-dark rituals.",
+      ctaHref: "/products?gender=women",
+      ctaLabel: "Shop women's perfumes",
+      limit: 4,
+    },
+    {
+      id: "unisex",
+      title: "For Everyone",
+      description: "Silhouettes that sway between soft woods and luminous citrus accords.",
+      ctaHref: "/products?gender=unisex",
+      ctaLabel: "Shop unisex perfumes",
+      limit: 4,
+    },
+  ],
   highlights: [
     {
       id: "atelier",

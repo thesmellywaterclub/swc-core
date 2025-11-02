@@ -21,6 +21,7 @@ type RequestWithAuth = Request & {
   auth?: {
     userId: string;
     email: string;
+    sellerId: string | null;
   };
 };
 
@@ -40,14 +41,15 @@ export function authenticate(required = true) {
       (req as RequestWithAuth).auth = {
         userId: payload.sub,
         email: payload.email,
+        sellerId: payload.sellerId ?? null,
       };
       return next();
     } catch (error) {
-      return next(
-        required
-          ? error
-          : createHttpError(401, "Invalid or expired token")
-      );
+      if (required) {
+        return next(error);
+      }
+
+      return next();
     }
   };
 }

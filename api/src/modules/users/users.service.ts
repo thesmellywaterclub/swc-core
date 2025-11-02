@@ -13,6 +13,7 @@ const USER_SELECT = Prisma.validator<Prisma.UserSelect>()({
   isSeller: true,
   clubMember: true,
   clubVerified: true,
+  sellerId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -30,6 +31,7 @@ export type UserSummary = {
   isSeller: boolean;
   clubMember: boolean;
   clubVerified: boolean;
+  sellerId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -48,6 +50,7 @@ export type CreateUserInput = {
   isSeller?: boolean;
   clubMember?: boolean;
   clubVerified?: boolean;
+  sellerId?: string | null;
 };
 
 export type UpdateUserInput = Partial<Omit<CreateUserInput, "password">> & {
@@ -64,6 +67,7 @@ export function serializeUser(user: UserRecord): UserSummary {
     isSeller: user.isSeller,
     clubMember: user.clubMember,
     clubVerified: user.clubVerified,
+    sellerId: user.sellerId ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
@@ -139,6 +143,13 @@ export async function createUser(input: CreateUserInput): Promise<UserSummary> {
         isSeller: input.isSeller ?? false,
         clubMember: input.clubMember ?? false,
         clubVerified: input.clubVerified ?? false,
+        ...(input.sellerId
+          ? {
+              seller: {
+                connect: { id: input.sellerId },
+              },
+            }
+          : {}),
       },
       select: USER_SELECT,
     });
@@ -187,6 +198,17 @@ export async function updateUser(
   }
   if (input.clubVerified !== undefined) {
     data.clubVerified = input.clubVerified;
+  }
+  if (input.sellerId !== undefined) {
+    if (input.sellerId) {
+      data.seller = {
+        connect: { id: input.sellerId },
+      };
+    } else {
+      data.seller = {
+        disconnect: true,
+      };
+    }
   }
   if (input.password) {
     data.passwordHash = await bcrypt.hash(input.password, 12);

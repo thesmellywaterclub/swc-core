@@ -38,7 +38,6 @@ function mapRazorpayStatus(status: string): PaymentStatus {
       return "failed";
     case "refunded":
       return "refunded";
-    case "partial_refunded":
     case "partially_refunded":
       return "partial_refund";
     default:

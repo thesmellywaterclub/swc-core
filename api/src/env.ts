@@ -19,7 +19,15 @@ const envSchema = z.object({
     .default(DEFAULT_JWT_SECRET),
   JWT_EXPIRES_IN: z.string().default("15m"),
   RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
-  EMAIL_FROM: z.string().min(1, "EMAIL_FROM is required"),
+  EMAIL_FROM: z
+    .string()
+    .min(1, "EMAIL_FROM is required")
+    .default("support@thesmellywaterclub.com"),
+  DELHIVERY_API_URL: z
+    .string()
+    .url("DELHIVERY_API_URL must be a valid URL")
+    .default("https://track.delhivery.com"),
+  DELHIVERY_API_TOKEN: z.string().min(1, "DELHIVERY_API_TOKEN is required"),
 });
 
 const parsed = envSchema.parse({
@@ -34,6 +42,8 @@ const parsed = envSchema.parse({
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   EMAIL_FROM: process.env.EMAIL_FROM,
+  DELHIVERY_API_URL: process.env.DELHIVERY_API_URL,
+  DELHIVERY_API_TOKEN: process.env.DELHIVERY_API_TOKEN,
 });
 
 const corsOrigins =
@@ -51,6 +61,8 @@ export const env = {
   jwtExpiresIn: parsed.JWT_EXPIRES_IN,
   resendApiKey: parsed.RESEND_API_KEY,
   emailFrom: parsed.EMAIL_FROM,
+  delhiveryApiUrl: parsed.DELHIVERY_API_URL,
+  delhiveryApiToken: parsed.DELHIVERY_API_TOKEN,
 };
 
 export type AppEnv = typeof env;

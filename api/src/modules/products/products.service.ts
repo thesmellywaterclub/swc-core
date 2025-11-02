@@ -19,6 +19,12 @@ const productInclude = {
   variants: {
     include: {
       inventory: true,
+      liveOffer: {
+        include: {
+          seller: true,
+          sellerLocation: true,
+        },
+      },
     },
     orderBy: [
       { isActive: "desc" },
@@ -34,7 +40,15 @@ type ProductWithRelations = Prisma.ProductGetPayload<{
 }>;
 
 type VariantWithInventory = Prisma.ProductVariantGetPayload<{
-  include: { inventory: true };
+  include: {
+    inventory: true;
+    liveOffer: {
+      include: {
+        seller: true;
+        sellerLocation: true;
+      };
+    };
+  };
 }>;
 
 const emptyNotes: ProductNotes = { top: [], heart: [], base: [] };
@@ -84,6 +98,21 @@ function serializeNotesInput(notes?: ProductNotes | null) {
 }
 
 function mapVariant(variant: VariantWithInventory): ProductVariant {
+  const bestOffer = variant.liveOffer
+    ? {
+        offerId: variant.liveOffer.offerId,
+        price: variant.liveOffer.price,
+        sellerId: variant.liveOffer.sellerId,
+        sellerName: variant.liveOffer.seller.displayName ?? variant.liveOffer.seller.name,
+        sellerDisplayName: variant.liveOffer.seller.displayName ?? null,
+        sellerLocationLabel: variant.liveOffer.sellerLocation.label,
+        stockQty: variant.liveOffer.stockQtySnapshot,
+        condition: variant.liveOffer.condition,
+        authGrade: variant.liveOffer.authGrade,
+        computedAt: variant.liveOffer.computedAt.toISOString(),
+      }
+    : null;
+
   return {
     id: variant.id,
     sku: variant.sku,
@@ -97,6 +126,7 @@ function mapVariant(variant: VariantWithInventory): ProductVariant {
           reserved: variant.inventory.reserved,
         }
       : null,
+    bestOffer,
   };
 }
 
@@ -106,7 +136,7 @@ function mapAggregates(
 ): ProductAggregatesDto {
   const activeVariants = variants.filter((variant) => variant.isActive);
   const variantPrices = activeVariants
-    .map((variant) => variant.salePaise ?? variant.mrpPaise)
+    .map((variant) => variant.bestOffer?.price ?? variant.salePaise ?? variant.mrpPaise)
     .filter((price): price is number => typeof price === "number");
 
   const fallbackLowPrice = variantPrices.length ? Math.min(...variantPrices) : null;
@@ -236,7 +266,15 @@ export async function getDefaultVariant(
     where: { slug },
     include: {
       variants: {
-        include: { inventory: true },
+        include: {
+          inventory: true,
+          liveOffer: {
+            include: {
+              seller: true,
+              sellerLocation: true,
+            },
+          },
+        },
         orderBy: [
           { isActive: "desc" },
           { sizeMl: "asc" },

@@ -1,17 +1,20 @@
 import { homeStaticContent } from "./home.data";
 import type {
+  HomeGenderSection,
   HomePageData,
   HomeProductGalleryItem,
   HomeStaticContent,
 } from "./home.types";
-import { getFeaturedProducts } from "../products/products.service";
+import {
+  getFeaturedProducts,
+  listProducts,
+} from "../products/products.service";
+
+const fallbackHeroImage = homeStaticContent.hero.image;
 
 function cloneStaticContent(): HomeStaticContent {
   return {
-    hero: {
-      ...homeStaticContent.hero,
-      ctas: homeStaticContent.hero.ctas.map((cta) => ({ ...cta })),
-    },
+    hero: null,
     highlights: homeStaticContent.highlights.map((highlight) => ({ ...highlight })),
     rituals: homeStaticContent.rituals.map((ritual) => ({
       ...ritual,
@@ -22,6 +25,9 @@ function cloneStaticContent(): HomeStaticContent {
       ...homeStaticContent.membership,
       perks: homeStaticContent.membership.perks.map((perk) => ({ ...perk })),
     },
+    genderSections: homeStaticContent.genderSections.map((section) => ({
+      ...section,
+    })),
   };
 }
 
@@ -31,7 +37,7 @@ function buildProductGallery(products: HomePageData["featuredProducts"]): HomePr
       product.media.find((mediaItem) => mediaItem.isPrimary) ?? product.media[0];
     const image = primaryMedia
       ? { url: primaryMedia.url, alt: primaryMedia.alt }
-      : { url: homeStaticContent.hero.image, alt: null };
+      : { url: fallbackHeroImage, alt: null };
 
     return {
       id: product.id,
@@ -52,9 +58,28 @@ export async function getHomePageData(limit = 4): Promise<HomePageData> {
   const featuredProducts = await getFeaturedProducts(limit);
   const productGallery = buildProductGallery(featuredProducts);
 
+  const genderSections: HomeGenderSection[] = await Promise.all(
+    staticContent.genderSections.map(async (sectionMeta) => {
+      const genderFilter = sectionMeta.id;
+      const genderProductsResult = await listProducts({
+        limit: sectionMeta.limit ?? 4,
+        gender: genderFilter,
+        isActive: true,
+      });
+
+      const mappedProducts = buildProductGallery(genderProductsResult.data);
+
+      return {
+        ...sectionMeta,
+        products: mappedProducts,
+      };
+    })
+  );
+
   return {
     ...staticContent,
     featuredProducts,
     productGallery,
+    genderSections,
   };
 }

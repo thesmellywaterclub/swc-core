@@ -42,6 +42,7 @@ export const createUserSchema = z.object({
   isSeller: z.boolean().optional(),
   clubMember: z.boolean().optional(),
   clubVerified: z.boolean().optional(),
+  sellerId: z.string().min(1).optional(),
 });
 
 export const updateUserSchema = createUserSchema

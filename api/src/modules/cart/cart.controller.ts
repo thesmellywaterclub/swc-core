@@ -15,6 +15,7 @@ type RequestWithAuth = Request & {
   auth?: {
     userId: string;
     email: string;
+    sellerId: string | null;
   };
 };
 

@@ -11,6 +11,9 @@ import { ordersRoutes } from "./modules/orders";
 import { paymentsRoutes } from "./modules/payments";
 import { productsRoutes } from "./modules/products";
 import { authRoutes, usersRoutes } from "./modules/users";
+import { shipmentsRoutes } from "./modules/shipments";
+import { sellerRoutes } from "./modules/seller";
+import { catalogRoutes } from "./modules/catalog";
 
 const app = express();
 
@@ -38,6 +41,9 @@ app.get("/", (_req, res) => {
       checkout: "/api/checkout",
       orders: "/api/orders",
       payments: "/api/payments",
+      shipments: "/api/shipments",
+      catalog: "/api/catalog",
+      seller: "/api/seller",
     },
   });
 });
@@ -50,7 +56,10 @@ app.use("/api/checkout", checkoutRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/products", productsRoutes);
+app.use("/api/shipments", shipmentsRoutes);
 app.use("/api/users", usersRoutes);
+app.use("/api/catalog", catalogRoutes);
+app.use("/api/seller", sellerRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

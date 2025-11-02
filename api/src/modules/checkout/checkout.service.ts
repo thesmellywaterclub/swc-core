@@ -2,6 +2,10 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "../../prisma";
 import { createHttpError } from "../../middlewares/error";
+import { env } from "../../env";
+import { sendEmail } from "../../services/email/email.service";
+import { logger } from "../../logger";
+import { recomputeLiveOfferForVariant } from "../offers/offers.service";
 import type { CartContext } from "../cart/cart.service";
 import { getCart } from "../cart/cart.service";
 import type { CheckoutInput, BuyNowInput } from "./checkout.schemas";
@@ -29,11 +33,90 @@ function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+function formatCurrencyPaise(paise: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(paise / 100);
+}
+
+function formatOrderNumber(orderId: string): string {
+  const [prefix] = orderId.split("-");
+  return (prefix ?? orderId).toUpperCase();
+}
+
+function buildFullName(firstName?: string | null, lastName?: string | null): string | null {
+  const parts = [firstName?.trim(), lastName?.trim()].filter(
+    (part): part is string => Boolean(part && part.length > 0)
+  );
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join(" ");
+}
+
+async function fetchCheckoutUser(context: CheckoutContext) {
+  if (!context.userId) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: context.userId },
+    select: {
+      email: true,
+      fullName: true,
+    },
+  });
+
+  if (!user) {
+    throw createHttpError(404, "User not found");
+  }
+
+  return user;
+}
+
+async function dispatchOrderConfirmationEmail(
+  order: OrderWithRelations,
+  options: {
+    recipientEmail: string;
+    customerName: string;
+    supportEmail?: string;
+    viewOrderUrl?: string;
+  }
+) {
+  await sendEmail({
+    to: options.recipientEmail,
+    type: "orderConfirmation",
+    data: {
+      customerName: options.customerName,
+      orderNumber: formatOrderNumber(order.id),
+      orderDate: new Intl.DateTimeFormat("en-IN", {
+        dateStyle: "long",
+      }).format(order.createdAt),
+      items: order.items.map((item) => ({
+        name: item.variant.product.title,
+        quantity: item.quantity,
+        price: formatCurrencyPaise(item.lineTotalPaise),
+      })),
+      subtotal: formatCurrencyPaise(order.subtotalPaise),
+      shipping: formatCurrencyPaise(order.shippingPaise),
+      total: formatCurrencyPaise(order.totalPaise),
+      supportEmail: options.supportEmail,
+      viewOrderUrl: options.viewOrderUrl,
+    },
+  });
+}
+
 export async function submitCheckout(
   context: CheckoutContext,
   input: CheckoutInput
 ): Promise<CheckoutResponseDto> {
   const isGuest = !context.userId;
+
+  const checkoutUser = await fetchCheckoutUser(context);
+
   if (isGuest && !context.guestToken) {
     throw createHttpError(401, "Guest token is required for guest checkout");
   }
@@ -66,6 +149,7 @@ export async function submitCheckout(
               include: {
                 product: true,
                 inventory: true,
+                liveOffer: true,
               },
             },
           },
@@ -110,6 +194,8 @@ export async function submitCheckout(
       const lineTotal = unitPrice * quantity;
       subtotal += lineTotal;
 
+      const liveOffer = variant.liveOffer;
+
       return {
         variantId: variant.id,
         productId: product.id,
@@ -117,6 +203,9 @@ export async function submitCheckout(
         unitPricePaise: unitPrice,
         quantity,
         lineTotalPaise: lineTotal,
+        sellerId: liveOffer?.sellerId ?? null,
+        sellerLocationId: liveOffer?.sellerLocationId ?? null,
+        sellerOfferId: liveOffer?.offerId ?? null,
       };
     });
 
@@ -128,7 +217,7 @@ export async function submitCheckout(
         continue;
       }
 
-      await tx.inventory.update({
+      const updatedInventory = await tx.inventory.update({
         where: { variantId: item.variantId },
         data: {
           stock: {
@@ -138,7 +227,14 @@ export async function submitCheckout(
             increment: item.quantity,
           },
         },
+        select: {
+          stock: true,
+        },
       });
+
+      if (updatedInventory.stock <= 0) {
+        await recomputeLiveOfferForVariant(item.variantId, tx);
+      }
     }
 
     const noteValue = input.notes?.trim() || null;
@@ -172,6 +268,34 @@ export async function submitCheckout(
   const response: CheckoutResponseDto = {
     order: mapOrderToDto(result),
   };
+
+  const recipientEmail = contactEmail ?? checkoutUser?.email ?? result.guestEmail ?? null;
+  const shippingName = buildFullName(input.shippingAddress.firstName, input.shippingAddress.lastName);
+  const billingName = buildFullName(input.billingAddress.firstName, input.billingAddress.lastName);
+  const fallbackName =
+    checkoutUser?.fullName ??
+    (recipientEmail ? recipientEmail.split("@")[0] ?? recipientEmail : "there");
+  const customerName = shippingName ?? billingName ?? fallbackName;
+
+  if (recipientEmail) {
+    try {
+      await dispatchOrderConfirmationEmail(result, {
+        recipientEmail,
+        customerName,
+        supportEmail: env.emailFrom,
+      });
+    } catch (error) {
+      logger.error("Failed to send order confirmation email", {
+        error,
+        orderId: result.id,
+        recipientEmail,
+      });
+    }
+  } else {
+    logger.warn("Skipping order confirmation email due to missing recipient", {
+      orderId: result.id,
+    });
+  }
 
   return response;
 }
@@ -219,6 +343,8 @@ export async function buyNowCheckout(
 ): Promise<CheckoutResponseDto> {
   const { item, contact, shippingAddress, billingAddress, notes } = input;
 
+  const checkoutUser = await fetchCheckoutUser(context);
+
   const isGuest = !context.userId;
   const contactEmail = contact?.email;
   if (isGuest && !contactEmail) {
@@ -230,6 +356,7 @@ export async function buyNowCheckout(
     include: {
       product: true,
       inventory: true,
+      liveOffer: true,
     },
   });
 
@@ -259,7 +386,7 @@ export async function buyNowCheckout(
   const noteValue = notes?.trim() || null;
 
   const order = await prisma.$transaction(async (tx) => {
-    await tx.inventory.update({
+    const updatedInventory = await tx.inventory.update({
       where: { variantId: variant.id },
       data: {
         stock: {
@@ -269,7 +396,14 @@ export async function buyNowCheckout(
           increment: item.quantity,
         },
       },
+      select: {
+        stock: true,
+      },
     });
+
+    if (updatedInventory.stock <= 0) {
+      await recomputeLiveOfferForVariant(variant.id, tx);
+    }
 
     const created = await tx.order.create({
       data: {
@@ -291,6 +425,9 @@ export async function buyNowCheckout(
             unitPricePaise: unitPrice,
             quantity: item.quantity,
             lineTotalPaise: subtotal,
+            sellerId: variant.liveOffer?.sellerId ?? null,
+            sellerLocationId: variant.liveOffer?.sellerLocationId ?? null,
+            sellerOfferId: variant.liveOffer?.offerId ?? null,
           },
         },
       },
@@ -299,6 +436,34 @@ export async function buyNowCheckout(
 
     return created as OrderWithRelations;
   });
+
+  const recipientEmail = contactEmail ?? checkoutUser?.email ?? order.guestEmail ?? null;
+  const shippingName = buildFullName(shippingAddress.firstName, shippingAddress.lastName);
+  const billingName = buildFullName(billingAddress.firstName, billingAddress.lastName);
+  const fallbackName =
+    checkoutUser?.fullName ??
+    (recipientEmail ? recipientEmail.split("@")[0] ?? recipientEmail : "there");
+  const customerName = shippingName ?? billingName ?? fallbackName;
+
+  if (recipientEmail) {
+    try {
+      await dispatchOrderConfirmationEmail(order, {
+        recipientEmail,
+        customerName,
+        supportEmail: env.emailFrom,
+      });
+    } catch (error) {
+      logger.error("Failed to send order confirmation email", {
+        error,
+        orderId: order.id,
+        recipientEmail,
+      });
+    }
+  } else {
+    logger.warn("Skipping order confirmation email due to missing recipient", {
+      orderId: order.id,
+    });
+  }
 
   return {
     order: mapOrderToDto(order),

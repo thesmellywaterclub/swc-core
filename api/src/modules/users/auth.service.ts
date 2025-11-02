@@ -7,6 +7,7 @@ import { env } from "../../env";
 import { createHttpError } from "../../middlewares/error";
 import { prisma } from "../../prisma";
 import { serializeUser, type CreateUserInput, type UserSummary } from "./users.service";
+import { sendEmail } from "../../services/email/email.service";
 
 const AUTH_USER_SELECT = Prisma.validator<Prisma.UserSelect>()({
   id: true,
@@ -17,6 +18,7 @@ const AUTH_USER_SELECT = Prisma.validator<Prisma.UserSelect>()({
   isSeller: true,
   clubMember: true,
   clubVerified: true,
+  sellerId: true,
   createdAt: true,
   updatedAt: true,
   passwordHash: true,
@@ -29,6 +31,7 @@ type UserWithPassword = Prisma.UserGetPayload<{
 export type AuthTokenPayload = {
   sub: string;
   email: string;
+  sellerId: string | null;
 };
 
 export type AuthResponse = {
@@ -40,6 +43,7 @@ function signAccessToken(user: UserSummary): string {
   const payload: AuthTokenPayload = {
     sub: user.id,
     email: user.email,
+    sellerId: user.sellerId,
   };
 
   const secret: Secret = env.jwtSecret;
@@ -113,6 +117,17 @@ export async function requestEmailOtp(email: string) {
   if (process.env.NODE_ENV !== "production") {
     console.info(`[auth] Email OTP for ${email}: ${code}`);
   }
+
+  await sendEmail({
+    to: email,
+    type: "emailVerificationOtp",
+    data: {
+      customerName: email.split("@")[0] ?? email,
+      otpCode: code,
+      expiresInMinutes: OTP_EXPIRY_MINUTES,
+      supportEmail: env.emailFrom,
+    },
+  });
 
   return {
     expiresInSeconds: OTP_EXPIRY_MINUTES * 60,
@@ -238,6 +253,10 @@ export function verifyAccessToken(token: string): AuthTokenPayload {
       return {
         sub: decoded.sub,
         email: decoded.email,
+        sellerId:
+          typeof (decoded as { sellerId?: unknown }).sellerId === "string"
+            ? ((decoded as { sellerId: string }).sellerId || null)
+            : null,
       };
     }
     throw new Error("Invalid token payload");
