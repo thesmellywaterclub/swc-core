@@ -3,27 +3,21 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { createHttpError } from "../../middlewares/error";
 import { env } from "../../env";
-import { sendEmail } from "../../services/email/email.service";
 import { logger } from "../../logger";
 import { recomputeLiveOfferForVariant } from "../offers/offers.service";
 import type { CartContext } from "../cart/cart.service";
 import { getCart } from "../cart/cart.service";
+import {
+  ORDER_EMAIL_INCLUDE,
+  buildFullName,
+  sendOrderConfirmationEmail,
+} from "../orders/order.emails";
 import type { CheckoutInput, BuyNowInput } from "./checkout.schemas";
 import type { CheckoutOrderDto, CheckoutOrderItemDto, CheckoutResponseDto } from "./checkout.dto";
 
 export type CheckoutContext = CartContext;
 
-const ORDER_INCLUDE = {
-  items: {
-    include: {
-      variant: {
-        include: {
-          product: true,
-        },
-      },
-    },
-  },
-} satisfies Prisma.OrderInclude;
+const ORDER_INCLUDE = ORDER_EMAIL_INCLUDE;
 
 type OrderWithRelations = Prisma.OrderGetPayload<{
   include: typeof ORDER_INCLUDE;
@@ -31,30 +25,6 @@ type OrderWithRelations = Prisma.OrderGetPayload<{
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
-}
-
-function formatCurrencyPaise(paise: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(paise / 100);
-}
-
-function formatOrderNumber(orderId: string): string {
-  const [prefix] = orderId.split("-");
-  return (prefix ?? orderId).toUpperCase();
-}
-
-function buildFullName(firstName?: string | null, lastName?: string | null): string | null {
-  const parts = [firstName?.trim(), lastName?.trim()].filter(
-    (part): part is string => Boolean(part && part.length > 0)
-  );
-  if (parts.length === 0) {
-    return null;
-  }
-  return parts.join(" ");
 }
 
 async function fetchCheckoutUser(context: CheckoutContext) {
@@ -75,38 +45,6 @@ async function fetchCheckoutUser(context: CheckoutContext) {
   }
 
   return user;
-}
-
-async function dispatchOrderConfirmationEmail(
-  order: OrderWithRelations,
-  options: {
-    recipientEmail: string;
-    customerName: string;
-    supportEmail?: string;
-    viewOrderUrl?: string;
-  }
-) {
-  await sendEmail({
-    to: options.recipientEmail,
-    type: "orderConfirmation",
-    data: {
-      customerName: options.customerName,
-      orderNumber: formatOrderNumber(order.id),
-      orderDate: new Intl.DateTimeFormat("en-IN", {
-        dateStyle: "long",
-      }).format(order.createdAt),
-      items: order.items.map((item) => ({
-        name: item.variant.product.title,
-        quantity: item.quantity,
-        price: formatCurrencyPaise(item.lineTotalPaise),
-      })),
-      subtotal: formatCurrencyPaise(order.subtotalPaise),
-      shipping: formatCurrencyPaise(order.shippingPaise),
-      total: formatCurrencyPaise(order.totalPaise),
-      supportEmail: options.supportEmail,
-      viewOrderUrl: options.viewOrderUrl,
-    },
-  });
 }
 
 export async function submitCheckout(
@@ -139,6 +77,13 @@ export async function submitCheckout(
 
   const cartId = cart.id;
 
+  const normalizeAmount = (value: number | undefined | null) =>
+    Number.isFinite(value) ? Math.max(0, Math.round(value as number)) : 0;
+
+  const shippingPaiseInput = normalizeAmount(input.pricing?.shippingPaise);
+  const taxPaiseInput = normalizeAmount(input.pricing?.taxPaise);
+  const discountPaiseInput = normalizeAmount(input.pricing?.discountPaise);
+
   const result = await prisma.$transaction(async (tx) => {
     const cartRecord = await tx.cart.findUnique({
       where: { id: cartId },
@@ -148,8 +93,11 @@ export async function submitCheckout(
             variant: {
               include: {
                 product: true,
-                inventory: true,
-                liveOffer: true,
+                liveOffer: {
+                  include: {
+                    offer: true,
+                  },
+                },
               },
             },
           },
@@ -166,9 +114,15 @@ export async function submitCheckout(
     }
 
     let subtotal = 0;
-    const taxPaise = 0;
-    const shippingPaise = 0;
-    const discountPaise = 0;
+    const taxPaise = taxPaiseInput;
+    const shippingPaise = shippingPaiseInput;
+    const discountPaise = discountPaiseInput;
+
+    const offerReductions: Array<{
+      variantId: string;
+      offerId: string;
+      quantity: number;
+    }> = [];
 
     const orderItemsData = cartRecord.items.map((item) => {
       const variant = item.variant;
@@ -177,16 +131,17 @@ export async function submitCheckout(
         throw createHttpError(400, "Cart contains inactive product");
       }
 
-      const inventory = variant.inventory;
-      if (!inventory) {
-        throw createHttpError(400, "Inventory unavailable for variant");
+      const liveOffer = variant.liveOffer;
+      const offer = liveOffer?.offer;
+      if (!liveOffer || !offer || !offer.isActive) {
+        throw createHttpError(400, "Variant unavailable for purchase");
       }
 
-      if (inventory.stock < item.quantity) {
+      if (offer.stockQty < item.quantity) {
         throw createHttpError(400, "Insufficient stock for item");
       }
 
-      const unitPrice = variant.salePaise ?? variant.mrpPaise;
+      const unitPrice = liveOffer.price ?? variant.salePaise ?? variant.mrpPaise;
       if (unitPrice == null) {
         throw createHttpError(400, "Pricing unavailable for item");
       }
@@ -194,7 +149,11 @@ export async function submitCheckout(
       const lineTotal = unitPrice * quantity;
       subtotal += lineTotal;
 
-      const liveOffer = variant.liveOffer;
+      offerReductions.push({
+        variantId: variant.id,
+        offerId: offer.id,
+        quantity,
+      });
 
       return {
         variantId: variant.id,
@@ -203,38 +162,34 @@ export async function submitCheckout(
         unitPricePaise: unitPrice,
         quantity,
         lineTotalPaise: lineTotal,
-        sellerId: liveOffer?.sellerId ?? null,
-        sellerLocationId: liveOffer?.sellerLocationId ?? null,
-        sellerOfferId: liveOffer?.offerId ?? null,
+        sellerId: liveOffer.sellerId,
+        sellerLocationId: liveOffer.sellerLocationId,
+        sellerOfferId: liveOffer.offerId,
       };
     });
 
     const totalPaise = subtotal + taxPaise + shippingPaise - discountPaise;
 
-    for (const item of cartRecord.items) {
-      const inventory = item.variant.inventory;
-      if (!inventory) {
-        continue;
-      }
-
-      const updatedInventory = await tx.inventory.update({
-        where: { variantId: item.variantId },
-        data: {
-          stock: {
-            decrement: item.quantity,
-          },
-          reserved: {
-            increment: item.quantity,
+    for (const reduction of offerReductions) {
+      const result = await tx.masterOffer.updateMany({
+        where: {
+          id: reduction.offerId,
+          stockQty: {
+            gte: reduction.quantity,
           },
         },
-        select: {
-          stock: true,
+        data: {
+          stockQty: {
+            decrement: reduction.quantity,
+          },
         },
       });
 
-      if (updatedInventory.stock <= 0) {
-        await recomputeLiveOfferForVariant(item.variantId, tx);
+      if (result.count === 0) {
+        throw createHttpError(400, "Insufficient stock for item");
       }
+
+      await recomputeLiveOfferForVariant(reduction.variantId, tx);
     }
 
     const noteValue = input.notes?.trim() || null;
@@ -277,12 +232,23 @@ export async function submitCheckout(
     (recipientEmail ? recipientEmail.split("@")[0] ?? recipientEmail : "there");
   const customerName = shippingName ?? billingName ?? fallbackName;
 
-  if (recipientEmail) {
+  const paymentMode = input.paymentMode ?? "PREPAID";
+  const shouldSendNow = paymentMode === "COD" || result.totalPaise <= 0;
+
+  if (recipientEmail && shouldSendNow) {
+    const paymentStatusLabel =
+      paymentMode === "COD" ? "Cash on Delivery – payment pending" : "No payment required";
+    const paymentStatusNote =
+      paymentMode === "COD"
+        ? "You chose Cash on Delivery. Please pay the courier when the order arrives."
+        : "This order does not require an online payment.";
     try {
-      await dispatchOrderConfirmationEmail(result, {
+      await sendOrderConfirmationEmail(result, {
         recipientEmail,
         customerName,
         supportEmail: env.emailFrom,
+        paymentStatusLabel,
+        paymentStatusNote,
       });
     } catch (error) {
       logger.error("Failed to send order confirmation email", {
@@ -291,8 +257,12 @@ export async function submitCheckout(
         recipientEmail,
       });
     }
-  } else {
+  } else if (!recipientEmail) {
     logger.warn("Skipping order confirmation email due to missing recipient", {
+      orderId: result.id,
+    });
+  } else {
+    logger.info("Deferring order confirmation email until payment confirmation", {
       orderId: result.id,
     });
   }
@@ -355,8 +325,11 @@ export async function buyNowCheckout(
     where: { id: item.variantId },
     include: {
       product: true,
-      inventory: true,
-      liveOffer: true,
+      liveOffer: {
+        include: {
+          offer: true,
+        },
+      },
     },
   });
 
@@ -364,46 +337,52 @@ export async function buyNowCheckout(
     throw createHttpError(404, "Variant not found or inactive");
   }
 
-  if (!variant.inventory) {
-    throw createHttpError(400, "Inventory unavailable for variant");
+  const liveOffer = variant.liveOffer;
+  const offer = liveOffer?.offer;
+  if (!liveOffer || !offer || !offer.isActive) {
+    throw createHttpError(400, "Variant unavailable for purchase");
   }
 
-  if (variant.inventory.stock < item.quantity) {
+  if (offer.stockQty < item.quantity) {
     throw createHttpError(400, "Insufficient stock for item");
   }
 
-  const unitPrice = variant.salePaise ?? variant.mrpPaise;
+  const unitPrice = liveOffer.price ?? variant.salePaise ?? variant.mrpPaise;
   if (unitPrice == null) {
     throw createHttpError(400, "Pricing unavailable for item");
   }
 
   const subtotal = unitPrice * item.quantity;
-  const taxPaise = 0;
-  const shippingPaise = 0;
-  const discountPaise = 0;
+  const normalizeAmount = (value: number | undefined | null) =>
+    Number.isFinite(value) ? Math.max(0, Math.round(value as number)) : 0;
+
+  const taxPaise = normalizeAmount(input.pricing?.taxPaise);
+  const shippingPaise = normalizeAmount(input.pricing?.shippingPaise);
+  const discountPaise = normalizeAmount(input.pricing?.discountPaise);
   const totalPaise = subtotal + taxPaise + shippingPaise - discountPaise;
 
   const noteValue = notes?.trim() || null;
 
   const order = await prisma.$transaction(async (tx) => {
-    const updatedInventory = await tx.inventory.update({
-      where: { variantId: variant.id },
-      data: {
-        stock: {
-          decrement: item.quantity,
-        },
-        reserved: {
-          increment: item.quantity,
+    const result = await tx.masterOffer.updateMany({
+      where: {
+        id: offer.id,
+        stockQty: {
+          gte: item.quantity,
         },
       },
-      select: {
-        stock: true,
+      data: {
+        stockQty: {
+          decrement: item.quantity,
+        },
       },
     });
 
-    if (updatedInventory.stock <= 0) {
-      await recomputeLiveOfferForVariant(variant.id, tx);
+    if (result.count === 0) {
+      throw createHttpError(400, "Insufficient stock for item");
     }
+
+    await recomputeLiveOfferForVariant(variant.id, tx);
 
     const created = await tx.order.create({
       data: {
@@ -425,9 +404,9 @@ export async function buyNowCheckout(
             unitPricePaise: unitPrice,
             quantity: item.quantity,
             lineTotalPaise: subtotal,
-            sellerId: variant.liveOffer?.sellerId ?? null,
-            sellerLocationId: variant.liveOffer?.sellerLocationId ?? null,
-            sellerOfferId: variant.liveOffer?.offerId ?? null,
+            sellerId: liveOffer.sellerId,
+            sellerLocationId: liveOffer.sellerLocationId,
+            sellerOfferId: liveOffer.offerId,
           },
         },
       },
@@ -445,12 +424,23 @@ export async function buyNowCheckout(
     (recipientEmail ? recipientEmail.split("@")[0] ?? recipientEmail : "there");
   const customerName = shippingName ?? billingName ?? fallbackName;
 
-  if (recipientEmail) {
+  const paymentMode = input.paymentMode ?? "PREPAID";
+  const shouldSendNow = paymentMode === "COD" || order.totalPaise <= 0;
+
+  if (recipientEmail && shouldSendNow) {
+    const paymentStatusLabel =
+      paymentMode === "COD" ? "Cash on Delivery – payment pending" : "No payment required";
+    const paymentStatusNote =
+      paymentMode === "COD"
+        ? "You chose Cash on Delivery. Please pay the courier when the order arrives."
+        : "This order does not require an online payment.";
     try {
-      await dispatchOrderConfirmationEmail(order, {
+      await sendOrderConfirmationEmail(order, {
         recipientEmail,
         customerName,
         supportEmail: env.emailFrom,
+        paymentStatusLabel,
+        paymentStatusNote,
       });
     } catch (error) {
       logger.error("Failed to send order confirmation email", {
@@ -459,8 +449,12 @@ export async function buyNowCheckout(
         recipientEmail,
       });
     }
-  } else {
+  } else if (!recipientEmail) {
     logger.warn("Skipping order confirmation email due to missing recipient", {
+      orderId: order.id,
+    });
+  } else {
+    logger.info("Deferring order confirmation email until payment confirmation", {
       orderId: order.id,
     });
   }

@@ -2,6 +2,7 @@ import type { OrderStatus, Prisma } from "@prisma/client";
 
 import { prisma } from "../../prisma";
 import { createHttpError } from "../../middlewares/error";
+import { recomputeLiveOfferForVariant } from "../offers/offers.service";
 import type {
   OrderDetailDto,
   OrderDetailResponse,
@@ -17,7 +18,6 @@ const ORDER_INCLUDE = {
       variant: {
         include: {
           product: true,
-          inventory: true,
         },
       },
     },
@@ -190,24 +190,22 @@ export async function cancelOrder(
 
   const updated = await prisma.$transaction(async (tx) => {
     for (const item of order.items) {
-      const inventory = item.variant.inventory;
-      if (!inventory) {
+      if (!item.sellerOfferId) {
         continue;
       }
 
-      const reservedDecrease = Math.min(inventory.reserved, item.quantity);
-
-      await tx.inventory.update({
-        where: { variantId: item.variantId },
+      const result = await tx.masterOffer.updateMany({
+        where: { id: item.sellerOfferId },
         data: {
-          stock: {
+          stockQty: {
             increment: item.quantity,
-          },
-          reserved: {
-            decrement: reservedDecrease,
           },
         },
       });
+
+      if (result.count > 0) {
+        await recomputeLiveOfferForVariant(item.variantId, tx);
+      }
     }
 
     const orderUpdate = await tx.order.update({

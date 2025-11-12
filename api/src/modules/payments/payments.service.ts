@@ -3,7 +3,13 @@ import type { OrderStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { env } from "../../env";
 import { createHttpError } from "../../middlewares/error";
 import { prisma } from "../../prisma";
+import { logger } from "../../logger";
 import { createRazorpayOrder, fetchRazorpayPayment, verifyPaymentSignature } from "./razorpay";
+import {
+  ORDER_EMAIL_INCLUDE,
+  buildFullName,
+  sendOrderConfirmationEmail,
+} from "../orders/order.emails";
 import type { PaymentConfirmationDto, PaymentSessionDto } from "./payments.dto";
 
 export type PaymentContext = {
@@ -30,6 +36,32 @@ function buildEventId(prefix: string, reference: string): string {
   return `${prefix}:${reference}:${Date.now()}:${random}`;
 }
 
+function getAddressRecord(value: Prisma.JsonValue | null): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function extractAddressName(address: Prisma.JsonValue | null): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const record = getAddressRecord(address);
+  const firstName =
+    record && typeof record.firstName === "string" ? (record.firstName as string) : null;
+  const lastName =
+    record && typeof record.lastName === "string" ? (record.lastName as string) : null;
+  return { firstName, lastName };
+}
+
+function toGatewayAmountPaise(amountInRupees: number): number {
+  if (!Number.isFinite(amountInRupees)) {
+    return 0;
+  }
+  return Math.round(Math.max(0, amountInRupees) * 100);
+}
+
 function mapRazorpayStatus(status: string): PaymentStatus {
   switch (status) {
     case "captured":
@@ -42,6 +74,39 @@ function mapRazorpayStatus(status: string): PaymentStatus {
       return "partial_refund";
     default:
       return "pending";
+  }
+}
+
+function describePaymentStatus(status: PaymentStatus): {
+  label: string;
+  note: string;
+} {
+  switch (status) {
+    case "completed":
+      return {
+        label: "Paid via Razorpay",
+        note: "We have received your payment via Razorpay.",
+      };
+    case "failed":
+      return {
+        label: "Payment failed",
+        note: "Your Razorpay payment failed. Please retry to keep your order active.",
+      };
+    case "refunded":
+      return {
+        label: "Payment refunded",
+        note: "Your Razorpay payment has been refunded.",
+      };
+    case "partial_refund":
+      return {
+        label: "Payment partially refunded",
+        note: "A partial refund has been issued for this Razorpay payment.",
+      };
+    default:
+      return {
+        label: "Payment pending",
+        note: "We are waiting for Razorpay to confirm your payment.",
+      };
   }
 }
 
@@ -131,6 +196,11 @@ export async function createPaymentSession(
   });
 
   let providerOrderId = payment.providerOrderId;
+  const gatewayAmountPaise = toGatewayAmountPaise(payment.amountPaise);
+
+  if (gatewayAmountPaise < 100) {
+    throw createHttpError(400, "Online payments require a minimum order total of ₹1");
+  }
 
   if (!providerOrderId) {
     const notes: Record<string, string> = {
@@ -143,7 +213,7 @@ export async function createPaymentSession(
     }
 
     const razorpayOrder = await createRazorpayOrder({
-      amount: payment.amountPaise,
+      amount: gatewayAmountPaise,
       currency: "INR",
       receipt: order.id,
       notes,
@@ -182,7 +252,7 @@ export async function createPaymentSession(
 
   return {
     orderId: order.id,
-    amountPaise: payment.amountPaise,
+    amountPaise: gatewayAmountPaise,
     currency: "INR",
     razorpayOrderId: providerOrderId,
     razorpayKeyId: env.razorpayKeyId,
@@ -254,7 +324,9 @@ export async function confirmRazorpayPayment(
     throw createHttpError(400, "Payment does not belong to the expected Razorpay order");
   }
 
-  if (razorpayPayment.amount !== payment.amountPaise) {
+  const expectedGatewayAmount = toGatewayAmountPaise(payment.amountPaise);
+
+  if (razorpayPayment.amount !== expectedGatewayAmount) {
     throw createHttpError(400, "Payment amount does not match the order total");
   }
 
@@ -270,7 +342,6 @@ export async function confirmRazorpayPayment(
         providerPaymentId: razorpayPayment.id,
         status: paymentStatus,
         method: razorpayPayment.method || null,
-        amountPaise: razorpayPayment.amount,
         transactionTs,
         events: {
           create: {
@@ -292,6 +363,51 @@ export async function confirmRazorpayPayment(
       });
     }
   });
+
+  const orderEmailRecord = await prisma.order.findUnique({
+    where: { id: order.id },
+    include: ORDER_EMAIL_INCLUDE,
+  });
+
+  const recipientEmail =
+    order.guestEmail ??
+    order.user?.email ??
+    context.email ??
+    context.guestEmail ??
+    null;
+
+  if (orderEmailRecord && recipientEmail) {
+    const shippingNameParts = extractAddressName(order.shippingAddress);
+    const billingNameParts = extractAddressName(order.billingAddress);
+    const fallbackName =
+      order.user?.fullName ??
+      (recipientEmail ? recipientEmail.split("@")[0] ?? recipientEmail : "there");
+    const customerName =
+      buildFullName(shippingNameParts.firstName, shippingNameParts.lastName) ??
+      buildFullName(billingNameParts.firstName, billingNameParts.lastName) ??
+      fallbackName;
+    const { label, note } = describePaymentStatus(paymentStatus);
+    try {
+      await sendOrderConfirmationEmail(orderEmailRecord, {
+        recipientEmail,
+        customerName,
+        supportEmail: env.emailFrom,
+        paymentStatusLabel: label,
+        paymentStatusNote: note,
+        orderStatus: nextOrderStatus ?? order.status,
+      });
+    } catch (error) {
+      logger.error("Failed to send payment status email", {
+        error,
+        orderId: order.id,
+        recipientEmail,
+      });
+    }
+  } else if (!recipientEmail) {
+    logger.warn("Skipping payment status email due to missing recipient", {
+      orderId: order.id,
+    });
+  }
 
   return {
     orderId: order.id,

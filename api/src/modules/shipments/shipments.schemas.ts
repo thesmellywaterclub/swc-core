@@ -23,17 +23,15 @@ const packageSchema = z.object({
   declaredValue: z.number().nonnegative(),
 });
 
+const locationSchema = z.object({
+  pincode: pincodeSchema,
+  city: z.string().optional(),
+  state: z.string().optional(),
+});
+
 export const serviceabilitySchema = z.object({
-  origin: z.object({
-    pincode: pincodeSchema,
-    city: z.string().optional(),
-    state: z.string().optional(),
-  }),
-  destination: z.object({
-    pincode: pincodeSchema,
-    city: z.string().optional(),
-    state: z.string().optional(),
-  }),
+  origin: locationSchema,
+  destination: locationSchema,
   shipment: z
     .object({
       weightGrams: z.number().int().positive().optional(),
@@ -44,6 +42,20 @@ export const serviceabilitySchema = z.object({
 });
 
 export type ServiceabilityInput = z.infer<typeof serviceabilitySchema>;
+export const shippingQuoteSchema = z.object({
+  origin: locationSchema,
+  destination: locationSchema,
+  shipment: z
+    .object({
+      paymentType: z.enum(["Prepaid", "COD"]).default("Prepaid"),
+      weightGrams: z.number().int().positive().optional(),
+      declaredValue: z.number().nonnegative().optional(),
+      mode: z.enum(["E", "S"]).optional(),
+    })
+    .optional(),
+});
+
+export type ShippingQuoteInput = z.infer<typeof shippingQuoteSchema>;
 
 export const createShipmentSchema = z.object({
   orderItemId: z.string().min(1),

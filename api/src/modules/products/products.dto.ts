@@ -13,11 +13,6 @@ export type ProductMedia = {
   isPrimary: boolean;
 };
 
-export type ProductVariantInventory = {
-  stock: number;
-  reserved: number;
-};
-
 export type VariantBestOffer = {
   offerId: string;
   price: number;
@@ -38,7 +33,6 @@ export type ProductVariant = {
   mrpPaise: number;
   salePaise: number | null;
   isActive: boolean;
-  inventory: ProductVariantInventory | null;
   bestOffer: VariantBestOffer | null;
 };
 

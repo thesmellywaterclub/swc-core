@@ -4,10 +4,12 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import {
   createShipmentSchema,
   serviceabilitySchema,
+  shippingQuoteSchema,
   trackShipmentParamsSchema,
   trackShipmentQuerySchema,
 } from "./shipments.schemas";
 import {
+  calculateShippingQuote,
   checkServiceAvailability,
   createShipmentForOrderItem,
   getShipmentTracking,
@@ -18,12 +20,19 @@ type RequestWithAuth = Request & {
     userId: string;
     email: string;
     sellerId: string | null;
+    isAdmin: boolean;
   };
 };
 
 export const checkServiceabilityHandler = asyncHandler(async (req, res) => {
   const payload = serviceabilitySchema.parse(req.body);
   const result = await checkServiceAvailability(payload);
+  res.json({ data: result });
+});
+
+export const calculateShippingQuoteHandler = asyncHandler(async (req, res) => {
+  const payload = shippingQuoteSchema.parse(req.body);
+  const result = await calculateShippingQuote(payload);
   res.json({ data: result });
 });
 

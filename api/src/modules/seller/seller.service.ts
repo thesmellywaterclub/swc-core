@@ -290,8 +290,9 @@ export async function registerSellerAccount(
           delhiveryPickupCode: pickup.delhiveryPickupCode,
           contactName: pickup.contactName,
           contactPhone: pickup.contactPhone,
-          delhiveryVerified: false,
-          status: LocationStatus.UNVERIFIED,
+          delhiveryVerified: true,
+          status: LocationStatus.ACTIVE,
+          lastVerifiedAt: new Date(),
         },
         select: locationSelect,
       });

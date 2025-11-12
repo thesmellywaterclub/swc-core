@@ -10,7 +10,9 @@ import {
   listProducts,
 } from "../products/products.service";
 
-const fallbackHeroImage = homeStaticContent.hero.image;
+const fallbackHeroImage =
+  homeStaticContent.hero?.image ??
+  "https://images.unsplash.com/photo-1573537805874-4cedc5d389ce?auto=format&fit=crop&w=1400&q=80";
 
 function cloneStaticContent(): HomeStaticContent {
   return {

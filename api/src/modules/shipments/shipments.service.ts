@@ -5,7 +5,11 @@ import { createHttpError } from "../../middlewares/error";
 import { prisma } from "../../prisma";
 import { logger } from "../../logger";
 import { createDelhiveryClient, DelhiveryApiError } from "./delhivery";
-import type { CreateShipmentInput, ServiceabilityInput } from "./shipments.schemas";
+import type {
+  CreateShipmentInput,
+  ServiceabilityInput,
+  ShippingQuoteInput,
+} from "./shipments.schemas";
 
 const delhiveryClient = createDelhiveryClient({
   baseUrl: env.delhiveryApiUrl,
@@ -117,6 +121,22 @@ function combineAddress(
   >
 ): string {
   return [address.addressLine1, address.addressLine2].filter(Boolean).join(", ");
+}
+
+function readWaybill(
+  source: Record<string, unknown> | null | undefined,
+  keys: string[]
+): string | null {
+  if (!source) {
+    return null;
+  }
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
 }
 
 function compactRecord<T extends Record<string, unknown>>(record: T): T {
@@ -320,20 +340,19 @@ export async function createShipmentForOrderItem(
 
   const shipmentsPayload = [
     compactRecord({
-      waybill: input.waybill,
       order: input.referenceNumber ?? orderItem.orderId,
       refno: input.referenceNumber ?? orderItem.orderId,
       products_desc: input.shipment.description,
       payment_mode: input.paymentType,
       total_amount: totalAmount,
-      cod_amount: input.paymentType === "COD" ? codAmount : undefined,
-      collectable_amount: input.paymentType === "COD" ? codAmount : undefined,
+      cod_amount: input.paymentType === "COD" ? codAmount : "Prepaid",
+      collectable_amount: input.paymentType === "COD" ? codAmount : "Prepaid",
       declared_value: declaredValue,
       weight: Number((input.shipment.weightGrams / 1000).toFixed(3)),
       shipment_length: input.shipment.lengthCm,
       shipment_width: input.shipment.widthCm,
       shipment_height: input.shipment.heightCm,
-      customer_name: input.delivery.name,
+      name: input.delivery.name,
       phone: input.delivery.phone,
       email: input.delivery.email,
       add: combineAddress(input.delivery),
@@ -341,7 +360,18 @@ export async function createShipmentForOrderItem(
       state: input.delivery.state,
       country: input.delivery.country,
       pin: input.delivery.pincode,
-      fragile_shipment: input.fragile ? "Y" : undefined,
+      return_pin: input.pickup.pincode,
+      return_city: input.pickup.city,
+      return_phone: input.pickup.phone,
+      return_add: combineAddress(input.pickup),
+      return_state: input.pickup.state,
+      return_country: input.pickup.country ?? "India",
+      hsn_code: "",
+      order_date: new Date().toISOString(),
+      seller_inv: input.referenceNumber ?? orderItem.orderId,
+      quantity: orderItem.quantity ?? 1,
+      shipping_mode: "Surface",
+      address_type: "",
       promised_delivery_date: input.promisedDeliveryDate,
     }),
   ];
@@ -382,19 +412,16 @@ export async function createShipmentForOrderItem(
         delhiveryPickupCode: undefined,
       };
 
+  logger.info(effectivePickup);    
+
   const pickupLocation = compactRecord({
-    name: effectivePickup.name,
-    add: combineAddress({
-      addressLine1: effectivePickup.addressLine1,
-      addressLine2: effectivePickup.addressLine2,
-    }),
-    city: effectivePickup.city,
-    state: effectivePickup.state,
-    country: effectivePickup.country,
-    pin: effectivePickup.pincode,
-    phone: effectivePickup.phone,
-    email: effectivePickup.email,
-    code: effectivePickup.delhiveryPickupCode,
+    name: effectivePickup.delhiveryPickupCode ?? effectivePickup.name
+  });
+
+  logger.info("Delhivery shipment request", {
+    orderItemId: orderItem.id,
+    pickupLocation,
+    shipmentCount: shipmentsPayload.length,
   });
 
   let delhiveryResponse: Record<string, unknown>;
@@ -402,6 +429,10 @@ export async function createShipmentForOrderItem(
     delhiveryResponse = await delhiveryClient.createShipment({
       shipments: shipmentsPayload,
       pickupLocation,
+    });
+    logger.info("Delhivery shipment response", {
+      orderItemId: orderItem.id,
+      response: delhiveryResponse,
     });
   } catch (error) {
     if (error instanceof DelhiveryApiError) {
@@ -440,13 +471,21 @@ export async function createShipmentForOrderItem(
   }
 
   const waybill =
-    (typeof packageInfo?.waybill === "string" && packageInfo.waybill) ||
-    (typeof packageInfo?.awb === "string" && packageInfo.awb) ||
-    (typeof packageInfo?.refno === "string" && packageInfo.refno) ||
+    readWaybill(packageInfo, ["waybill", "awb", "refno", "wayBill", "waybillno"]) ??
+    readWaybill(
+      typeof delhiveryResponse === "object" && delhiveryResponse
+        ? (delhiveryResponse as Record<string, unknown>)
+        : null,
+      ["waybill", "awb", "upload_wbn", "consignment_no", "refno"]
+    ) ??
     input.waybill;
 
   if (!waybill) {
-    throw createHttpError(502, "Delhivery did not return a waybill number");
+    logger.error("Delhivery shipment response missing waybill", {
+      orderItemId: orderItem.id,
+      response: delhiveryResponse,
+    });
+    throw createHttpError(502, "Delhivery did not return a waybill number", delhiveryResponse);
   }
 
   const manifestUrl =

@@ -14,6 +14,7 @@ import { authRoutes, usersRoutes } from "./modules/users";
 import { shipmentsRoutes } from "./modules/shipments";
 import { sellerRoutes } from "./modules/seller";
 import { catalogRoutes } from "./modules/catalog";
+import { brandsRoutes } from "./modules/brands";
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use("/api/shipments", shipmentsRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/catalog", catalogRoutes);
 app.use("/api/seller", sellerRoutes);
+app.use("/api/brands", brandsRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -28,6 +28,29 @@ const envSchema = z.object({
     .url("DELHIVERY_API_URL must be a valid URL")
     .default("https://track.delhivery.com"),
   DELHIVERY_API_TOKEN: z.string().min(1, "DELHIVERY_API_TOKEN is required"),
+  AWS_ACCESS_KEY_ID: z.string().min(1, "AWS_ACCESS_KEY_ID is required"),
+  AWS_SECRET_ACCESS_KEY: z.string().min(1, "AWS_SECRET_ACCESS_KEY is required"),
+  AWS_REGION: z.string().min(1, "AWS_REGION is required"),
+  S3_BUCKET_NAME: z.string().min(1, "S3_BUCKET_NAME is required"),
+  S3_PUBLIC_URL: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed && trimmed.length > 0 ? trimmed : undefined;
+    })
+    .refine(
+      (value) => !value || (() => {
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      })(),
+      "S3_PUBLIC_URL must be a valid URL"
+    )
+    .optional(),
 });
 
 const parsed = envSchema.parse({
@@ -44,6 +67,11 @@ const parsed = envSchema.parse({
   EMAIL_FROM: process.env.EMAIL_FROM,
   DELHIVERY_API_URL: process.env.DELHIVERY_API_URL,
   DELHIVERY_API_TOKEN: process.env.DELHIVERY_API_TOKEN,
+  AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+  AWS_REGION: process.env.AWS_REGION,
+  S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+  S3_PUBLIC_URL: process.env.S3_PUBLIC_URL,
 });
 
 const corsOrigins =
@@ -63,6 +91,11 @@ export const env = {
   emailFrom: parsed.EMAIL_FROM,
   delhiveryApiUrl: parsed.DELHIVERY_API_URL,
   delhiveryApiToken: parsed.DELHIVERY_API_TOKEN,
+  awsAccessKeyId: parsed.AWS_ACCESS_KEY_ID,
+  awsSecretAccessKey: parsed.AWS_SECRET_ACCESS_KEY,
+  awsRegion: parsed.AWS_REGION,
+  s3BucketName: parsed.S3_BUCKET_NAME,
+  s3PublicUrl: parsed.S3_PUBLIC_URL ?? null,
 };
 
 export type AppEnv = typeof env;

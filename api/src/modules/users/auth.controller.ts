@@ -37,6 +37,7 @@ type RequestWithAuth = Request & {
     userId: string;
     email: string;
     sellerId: string | null;
+    isAdmin: boolean;
   };
 };
 

@@ -11,6 +11,7 @@ const USER_SELECT = Prisma.validator<Prisma.UserSelect>()({
   fullName: true,
   avatarUrl: true,
   isSeller: true,
+  isAdmin: true,
   clubMember: true,
   clubVerified: true,
   sellerId: true,
@@ -29,6 +30,7 @@ export type UserSummary = {
   fullName: string;
   avatarUrl: string | null;
   isSeller: boolean;
+  isAdmin: boolean;
   clubMember: boolean;
   clubVerified: boolean;
   sellerId: string | null;
@@ -48,6 +50,7 @@ export type CreateUserInput = {
   phone?: string;
   avatarUrl?: string;
   isSeller?: boolean;
+  isAdmin?: boolean;
   clubMember?: boolean;
   clubVerified?: boolean;
   sellerId?: string | null;
@@ -65,6 +68,7 @@ export function serializeUser(user: UserRecord): UserSummary {
     fullName: user.fullName,
     avatarUrl: user.avatarUrl,
     isSeller: user.isSeller,
+    isAdmin: user.isAdmin,
     clubMember: user.clubMember,
     clubVerified: user.clubVerified,
     sellerId: user.sellerId ?? null,
@@ -141,6 +145,7 @@ export async function createUser(input: CreateUserInput): Promise<UserSummary> {
         phone: input.phone,
         avatarUrl: input.avatarUrl,
         isSeller: input.isSeller ?? false,
+        isAdmin: input.isAdmin ?? false,
         clubMember: input.clubMember ?? false,
         clubVerified: input.clubVerified ?? false,
         ...(input.sellerId
@@ -192,6 +197,9 @@ export async function updateUser(
   }
   if (input.isSeller !== undefined) {
     data.isSeller = input.isSeller;
+  }
+  if (input.isAdmin !== undefined) {
+    data.isAdmin = input.isAdmin;
   }
   if (input.clubMember !== undefined) {
     data.clubMember = input.clubMember;

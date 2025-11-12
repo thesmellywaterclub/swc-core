@@ -17,11 +17,23 @@ const contactSchema = z.object({
   phone: z.string().min(5).max(20).optional(),
 });
 
+const paymentModeSchema = z.enum(["COD", "PREPAID"]).default("PREPAID");
+
+const pricingSchema = z
+  .object({
+    shippingPaise: z.number().int().nonnegative().optional(),
+    taxPaise: z.number().int().nonnegative().optional(),
+    discountPaise: z.number().int().nonnegative().optional(),
+  })
+  .optional();
+
 export const checkoutSchema = z.object({
   shippingAddress: addressSchema,
   billingAddress: addressSchema,
   notes: z.string().max(1000).optional(),
   contact: contactSchema.optional(),
+  paymentMode: paymentModeSchema,
+  pricing: pricingSchema,
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;

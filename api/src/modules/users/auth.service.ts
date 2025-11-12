@@ -16,6 +16,7 @@ const AUTH_USER_SELECT = Prisma.validator<Prisma.UserSelect>()({
   fullName: true,
   avatarUrl: true,
   isSeller: true,
+  isAdmin: true,
   clubMember: true,
   clubVerified: true,
   sellerId: true,
@@ -32,6 +33,7 @@ export type AuthTokenPayload = {
   sub: string;
   email: string;
   sellerId: string | null;
+  isAdmin: boolean;
 };
 
 export type AuthResponse = {
@@ -44,6 +46,7 @@ function signAccessToken(user: UserSummary): string {
     sub: user.id,
     email: user.email,
     sellerId: user.sellerId,
+    isAdmin: user.isAdmin,
   };
 
   const secret: Secret = env.jwtSecret;
@@ -250,13 +253,19 @@ export function verifyAccessToken(token: string): AuthTokenPayload {
       typeof decoded.sub === "string" &&
       typeof decoded.email === "string"
     ) {
+      const sellerId =
+        typeof (decoded as { sellerId?: unknown }).sellerId === "string"
+          ? ((decoded as { sellerId: string }).sellerId || null)
+          : null;
+      const isAdmin =
+        typeof (decoded as { isAdmin?: unknown }).isAdmin === "boolean"
+          ? (decoded as { isAdmin: boolean }).isAdmin
+          : false;
       return {
         sub: decoded.sub,
         email: decoded.email,
-        sellerId:
-          typeof (decoded as { sellerId?: unknown }).sellerId === "string"
-            ? ((decoded as { sellerId: string }).sellerId || null)
-            : null,
+        sellerId,
+        isAdmin,
       };
     }
     throw new Error("Invalid token payload");

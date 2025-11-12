@@ -5,6 +5,7 @@ type RequestOptions = {
   path: string;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+  contentType?: "json" | "form";
 };
 
 export type DelhiveryClientConfig = {
@@ -64,7 +65,7 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 export function createDelhiveryClient(config: DelhiveryClientConfig) {
   const { baseUrl, token, userAgent } = config;
   async function request<TData = unknown>(options: RequestOptions): Promise<TData> {
-    const { method = "GET", path, query, body } = options;
+    const { method = "GET", path, query, body, contentType = "json" } = options;
 
     const url = buildUrl(baseUrl, path, query);
     const headers: Record<string, string> = {
@@ -73,14 +74,31 @@ export function createDelhiveryClient(config: DelhiveryClientConfig) {
     if (userAgent) {
       headers["User-Agent"] = userAgent;
     }
-    if (method === "POST") {
-      headers["Content-Type"] = "application/json";
+    let serializedBody: BodyInit | undefined;
+    if (method === "POST" && body !== undefined) {
+      if (contentType === "form") {
+        headers["Content-Type"] = "application/x-www-form-urlencoded";
+        serializedBody =
+          body instanceof URLSearchParams
+            ? body.toString()
+            : typeof body === "string"
+            ? body
+            : new URLSearchParams(
+                Object.entries(body as Record<string, string>).map(([key, value]) => [
+                  key,
+                  String(value ?? ""),
+                ])
+              ).toString();
+      } else {
+        headers["Content-Type"] = "application/json";
+        serializedBody = JSON.stringify(body);
+      }
     }
 
     const response = await fetch(url, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: serializedBody,
     });
 
     const payload = await parseJsonResponse(response);
@@ -117,18 +135,51 @@ export function createDelhiveryClient(config: DelhiveryClientConfig) {
     });
   }
 
+  async function getInvoiceCharges(params: {
+    originPincode: string;
+    destinationPincode: string;
+    paymentType: "Prepaid" | "COD";
+    chargeableWeightGrams?: number;
+    mode?: "E" | "S";
+  }) {
+    const chargeableWeight =
+      params.chargeableWeightGrams && Number.isFinite(params.chargeableWeightGrams)
+        ? Math.max(100, Math.round(params.chargeableWeightGrams))
+        : 1000;
+
+    return request<Record<string, unknown>>({
+      method: "GET",
+      path: "api/kinko/v1/invoice/charges/.json",
+      query: {
+        md: params.mode ?? "E",
+        ss: "Delivered",
+        d_pin: params.destinationPincode,
+        o_pin: params.originPincode,
+        cgm: chargeableWeight,
+        pt: params.paymentType === "COD" ? "COD" : "Pre-paid",
+      },
+    });
+  }
+
   async function createShipment(payload: {
     shipments: Array<Record<string, unknown>>;
     pickupLocation: Record<string, unknown>;
   }) {
+    const formBody = new URLSearchParams({
+      format: "json",
+      data: JSON.stringify({
+        pickups: [],
+        delivery_centre: null,
+        pickup_location: payload.pickupLocation,
+        shipments: payload.shipments,
+      }),
+    }).toString();
+
     return request<Record<string, unknown>>({
       method: "POST",
       path: "api/cmu/create.json",
-      body: {
-        format: "json",
-        pickup_location: payload.pickupLocation,
-        shipments: payload.shipments,
-      },
+      body: formBody,
+      contentType: "form",
     });
   }
 
@@ -144,6 +195,7 @@ export function createDelhiveryClient(config: DelhiveryClientConfig) {
 
   return {
     checkServiceability,
+    getInvoiceCharges,
     createShipment,
     trackShipment,
   };

@@ -43,7 +43,7 @@ export const listProductsQuerySchema = z.object({
       }
       return undefined;
     })
-    .pipe(z.number().int().min(1).max(50).optional()),
+    .pipe(z.number().int().min(1).max(200).optional()),
   gender: genderEnum.optional(),
   brandId: z.string().uuid({ message: "brandId must be a valid UUID" }).optional(),
   isActive: z
@@ -86,3 +86,45 @@ export const updateProductSchema = createProductSchema
     (value) => Object.keys(value).length > 0,
     "At least one field must be provided to update the product"
   );
+
+export const productMediaPresignBodySchema = z.object({
+  contentType: z
+    .string()
+    .min(1, "contentType is required"),
+  fileName: z.string().optional(),
+});
+
+export const productMediaCreateSchema = z.object({
+  url: z.string().url("url must be a valid URL"),
+  alt: z.string().max(200).optional(),
+  isPrimary: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const productMediaUpdateSchema = z
+  .object({
+    alt: z.string().max(200).optional(),
+    isPrimary: z.boolean().optional(),
+    sortOrder: z.number().int().optional(),
+  })
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "At least one field must be provided to update the media item"
+  );
+
+export const productMediaIdParamSchema = z.object({
+  mediaId: z.string().uuid({
+    message: "Media id must be a valid UUID",
+  }),
+});
+
+export const productVariantCreateSchema = z.object({
+  sizeMl: z.number().int().positive(),
+  sku: z.string().min(1).max(120),
+  mrpPaise: z.number().int().positive(),
+  salePaise: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
+});

@@ -22,6 +22,7 @@ type RequestWithAuth = Request & {
     userId: string;
     email: string;
     sellerId: string | null;
+    isAdmin: boolean;
   };
 };
 
@@ -42,6 +43,7 @@ export function authenticate(required = true) {
         userId: payload.sub,
         email: payload.email,
         sellerId: payload.sellerId ?? null,
+        isAdmin: payload.isAdmin ?? false,
       };
       return next();
     } catch (error) {
@@ -51,5 +53,15 @@ export function authenticate(required = true) {
 
       return next();
     }
+  };
+}
+
+export function requireAdmin() {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const auth = (req as RequestWithAuth).auth;
+    if (!auth || !auth.isAdmin) {
+      return next(createHttpError(403, "Admin access required"));
+    }
+    return next();
   };
 }

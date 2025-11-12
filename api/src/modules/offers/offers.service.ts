@@ -59,21 +59,11 @@ export async function recomputeLiveOfferForVariant(
   });
 
   if (!bestOffer) {
-    try {
-      await db.liveOffer.delete({
-        where: {
-          variantId,
-        },
-      });
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        (error as { code?: string }).code !== "P2025"
-      ) {
-        throw error;
-      }
-    }
+    await db.liveOffer.deleteMany({
+      where: {
+        variantId,
+      },
+    });
     return;
   }
 

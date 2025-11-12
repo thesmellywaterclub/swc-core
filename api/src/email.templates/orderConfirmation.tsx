@@ -11,6 +11,7 @@ import {
   Section,
   Text,
 } from "@react-email/components";
+import type { OrderStatus } from "@prisma/client";
 import type { CSSProperties, ReactElement } from "react";
 
 export type OrderItem = {
@@ -26,13 +27,18 @@ export type OrderConfirmationEmailProps = {
   items: OrderItem[];
   subtotal: string;
   shipping: string;
+  tax?: string;
   total: string;
   supportEmail?: string;
   viewOrderUrl?: string;
+  paymentStatusLabel?: string;
+  paymentStatusNote?: string;
+  orderStatus?: OrderStatus;
 };
 
 export function getOrderConfirmationSubject(data: OrderConfirmationEmailProps): string {
-  return `Your Smelly Water Club order ${data.orderNumber} is confirmed`;
+  const statusSuffix = data.paymentStatusLabel ? ` – ${data.paymentStatusLabel}` : "";
+  return `Your Smelly Water Club order ${data.orderNumber}${statusSuffix}`;
 }
 
 export function OrderConfirmationEmail({
@@ -45,11 +51,15 @@ export function OrderConfirmationEmail({
   total,
   supportEmail,
   viewOrderUrl,
+  paymentStatusLabel,
+  paymentStatusNote,
+  tax,
 }: OrderConfirmationEmailProps): ReactElement {
+  const taxDisplay = typeof tax === "string" && tax.length > 0 ? tax : "₹0.00";
   return (
     <Html>
       <Head />
-      <Preview>{`SWC order ${orderNumber} confirmed`}</Preview>
+      <Preview>{`SWC order ${orderNumber}${paymentStatusLabel ? ` – ${paymentStatusLabel}` : ""}`}</Preview>
       <Body style={styles.body}>
         <Container style={styles.container}>
           <Heading style={styles.heading}>Thanks for your order, {customerName}!</Heading>
@@ -64,6 +74,11 @@ export function OrderConfirmationEmail({
               <br />
               <strong>Order date:</strong> {orderDate}
             </Text>
+            {paymentStatusNote ? (
+              <Text style={styles.paymentStatus}>
+                <strong>Payment status:</strong> {paymentStatusNote}
+              </Text>
+            ) : null}
           </Section>
 
           <Section style={styles.section}>
@@ -93,6 +108,14 @@ export function OrderConfirmationEmail({
               </Column>
               <Column align="right">
                 <Text style={styles.summaryValue}>{shipping}</Text>
+              </Column>
+            </Row>
+            <Row style={styles.summaryRow}>
+              <Column>
+                <Text style={styles.summaryLabel}>Tax</Text>
+              </Column>
+              <Column align="right">
+                <Text style={styles.summaryValue}>{taxDisplay}</Text>
               </Column>
             </Row>
             <Row style={styles.totalRow}>
@@ -163,6 +186,15 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "14px",
     lineHeight: "20px",
     color: "#4a5568",
+  },
+  paymentStatus: {
+    fontSize: "14px",
+    lineHeight: "20px",
+    color: "#1a202c",
+    marginTop: "8px",
+    padding: "12px",
+    backgroundColor: "#fef3c7",
+    borderRadius: "8px",
   },
   section: {
     marginBottom: "28px",
